@@ -474,6 +474,34 @@ def update_H_positions(mol: Chem.Mol, indices_to_update: list[int]) -> None:
 
     return
 
+def _delete_residues(res_to_delete, raw_input_mols):
+    """
+
+    Parameters
+    ----------
+    res_to_delete: list (str)
+        residue IDs to delete in format <chain>:<resnum><icode>
+    raw_input_mols: dict (str -> RDKit mol)
+        keys are residue IDs
+
+    Returns
+    -------
+    None
+    (modifies raw_input_mols in-place)
+
+    """
+    missing = set()
+    for res in res_to_delete:
+        if res not in raw_input_mols:
+            missing.add(res)
+        raw_input_mols.pop(res)
+    if len(missing) > 0:
+        msg = "can't find the following residues to delete: " + " ".join(missing)
+        raise ValueError(msg)
+    return
+
+
+
 
 class ResidueChemTemplates:
     """Holds template data required to initialize LinkedRDKitChorizo
@@ -670,6 +698,12 @@ class LinkedRDKitChorizo:
             raise ValueError(msg)
         bonds = {k: v[0] for k, v in bonds.items()}
 
+        if residues_to_delete is None:
+            residues_to_delete = ()  # _delete_residues expects an iterator
+        _delete_residues(residues_to_delete, raw_input_mols)
+        self.user_deleted = residues_to_delete
+        print(raw_input_mols)
+
         self.residues, self.log = self._get_residues(
             raw_input_mols,
             ambiguous,
@@ -678,11 +712,6 @@ class LinkedRDKitChorizo:
             bonds,
             blunt_ends,
         )
-
-        # TODO integrate with mk_prepare_receptor.py (former suggested_mutations)
-        if residues_to_delete is None:
-            residues_to_delete = ()  # self._delete_residues expects an iterator
-        self._delete_residues(residues_to_delete, self.residues)
 
         _bonds = {}
         for key, bond in bonds.items():
@@ -1300,31 +1329,6 @@ class LinkedRDKitChorizo:
             raise RuntimeError(err_msg)
         return padded_mols
 
-    @staticmethod
-    def _delete_residues(query_res, residues):
-        """
-
-        Parameters
-        ----------
-        query_res
-        residues
-
-        Returns
-        -------
-
-        """
-        missing = set()
-        for res in query_res:
-            if res not in residues:
-                missing.add(res)
-            elif residues[
-                res
-            ]:  # is not None: # expecting None if templates didn't match
-                residues[res].user_deleted = True
-        if len(missing) > 0:
-            msg = "can't find the following residues to delete: " + " ".join(missing)
-            raise ValueError(msg)
-
     def flexibilize_sidechain(self, residue_id, mk_prep):
         """
 
@@ -1527,12 +1531,7 @@ class LinkedRDKitChorizo:
         atom_count = 0
         pdb_line = "{:6s}{:5d} {:^4s} {:3s} {:1s}{:4d}{:1s}   {:8.3f}{:8.3f}{:8.3f}                       {:2s} "
         pdb_line += pathlib.os.linesep
-        for res_id in self.residues:
-            if (
-                self.residues[res_id].user_deleted
-                or self.residues[res_id].rdkit_mol is None
-            ):
-                continue
+        for res_id in self.get_valid_residues():
             resmol = self.residues[res_id].rdkit_mol
             if use_modified_coords and self.residues[res_id].molsetup is not None:
                 molsetup = self.residues[res_id].molsetup
@@ -1637,12 +1636,6 @@ class LinkedRDKitChorizo:
 
     # The following functions return filtered dictionaries of residues based on the value of residue flags.
     # region Filtering Residues
-    def get_user_deleted_residues(self):
-        return {k: v for k, v in self.residues.items() if v.user_deleted}
-
-    def get_non_user_deleted_residues(self):
-        return {k: v for k, v in self.residues.items() if not v.user_deleted}
-
     def get_ignored_residues(self):
         return {k: v for k, v in self.residues.items() if v.rdkit_mol is None}
 
@@ -1804,7 +1797,6 @@ class ChorizoResidue:
         # flags
         # NOTE no longer using ignore_residue, checking if rdkit_mol == None instead
         self.is_movable = False
-        self.user_deleted = False
 
     def set_atom_names(self, atom_names_list):
         """
@@ -1862,7 +1854,7 @@ class ChorizoResidue:
         -------
         bool
         """
-        return self.rdkit_mol is not None and not self.user_deleted
+        return self.rdkit_mol is not None
 
 
 class ResiduePadder:
@@ -2149,7 +2141,6 @@ class ChorizoResidueEncoder(json.JSONEncoder):
                 "molsetup": molsetup_json,
                 "is_flexres_atom": obj.is_flexres_atom,
                 "is_movable": obj.is_movable,
-                "user_deleted": obj.user_deleted,
                 "molsetup_mapidx": obj.molsetup_mapidx,
             }
         return json.JSONEncoder.default(self, obj)
@@ -2333,7 +2324,6 @@ def chorizo_residue_json_decoder(obj: dict):
         "molsetup",
         "is_flexres_atom",
         "is_movable",
-        "user_deleted",
         "molsetup_mapidx",
     }
 
@@ -2369,7 +2359,6 @@ def chorizo_residue_json_decoder(obj: dict):
     # boolean values
     residue.is_flexres_atom = obj["is_flexres_atom"]
     residue.is_movable = obj["is_movable"]
-    residue.user_deleted = obj["user_deleted"]
 
     return residue
 
