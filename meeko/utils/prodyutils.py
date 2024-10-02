@@ -3,7 +3,6 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import rdDetermineBonds
 from rdkit.Chem.rdchem import Mol
-from rdkit.Geometry import Point3D
 
 from prody.atomic import ATOMIC_FIELDS
 from prody.atomic.atomgroup import AtomGroup
@@ -101,8 +100,8 @@ def rdkit_to_prody(
     # https://sourceforge.net/p/rdkit/mailman/rdkit-discuss/thread/60825b0f0804152055x4ba39e13k7d62f81634413ca6@mail.gmail.com/
 
 
-ALLOWED_PRODY_TYPES = Union[Selection, AtomGroup, Chain, Residue]
 
+ALLOWED_PRODY_TYPES = Union[Selection, AtomGroup, Chain, Residue]
 
 def prody_to_rdkit(
     prody_obj: ALLOWED_PRODY_TYPES,
@@ -160,6 +159,7 @@ def prody_to_rdkit(
     keep_bonds : bool (default: False)
         use bonds defined in the ProDy object, instead of perceiving them with
         RDKit using rdDetermineBonds.DetermineConnectivity()
+        Note that prody's mmCif parser does not parse bonds as of v2.4.1.
     keep_charges : bool (default: False)
         use partial charges defined in the ProDy object; when True, partial
         charges are stored as  "_prody_charges" property in the RDKit molecule

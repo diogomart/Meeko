@@ -1407,10 +1407,9 @@ class LinkedRDKitChorizo:
         reskey = None
         buffered_reskey = None
         buffered_resname = None
-        interrupted_residues = (
-            set()
-        )  # e.g. non-consecutive residue lines due to interruption by TER or another res
-        pdb_block = ""
+        # residues in non-consecutive lines due to TER or another res
+        interrupted_residues = set()
+        pdb_block = []
 
         def _add_if_new(to_dict, key, value, repeat_log):
             if key in to_dict:
@@ -1423,23 +1422,28 @@ class LinkedRDKitChorizo:
             if line.startswith("TER") and reskey is not None:
                 _add_if_new(blocks_by_residue, reskey, pdb_block, interrupted_residues)
                 blocks_by_residue[reskey] = pdb_block
-                pdb_block = ""
+                pdb_block = []
                 reskey = None
                 buffered_reskey = None
             if line.startswith("ATOM") or line.startswith("HETATM"):
-                # Generating dictionary key
+                atomname = line[12:16].strip()
+                altloc = line[16:17].strip()
                 resname = line[17:20].strip()
-                resid = int(line[22:26].strip())
-                chainid = line[21].strip()
+                chainid = line[21:22].strip()
+                resnum = int(line[22:26].strip())
                 icode = line[26:27].strip()
-                reskey = (
-                    f"{chainid}:{resid}{icode}"  # e.g. "A:42", ":42", "A:42B", ":42B"
-                )
+                x = float(line[30:38])
+                y = float(line[38:46])
+                z = float(line[46:54])
+                element = line[76:78].strip()
+                reskey = f"{chainid}:{resnum}{icode}"  # e.g. ":42", "A:42B"
                 reskey_to_resname.setdefault(reskey, set())
                 reskey_to_resname[reskey].add(resname)
 
                 if reskey == buffered_reskey:  # this line continues existing residue
-                    pdb_block += line
+                    atom = (atomname, altloc, resname, chainid,
+                            resnum, icode, x, y, z, element)
+                    pdb_block.append(atom)
                 else:
                     if buffered_reskey is not None:
                         _add_if_new(
@@ -1449,10 +1453,14 @@ class LinkedRDKitChorizo:
                             interrupted_residues,
                         )
                     buffered_reskey = reskey
-                    pdb_block = line
+                    pdb_block = atom
 
-        if len(pdb_block):  # there was not a TER line
+        if pdb_block:  # there was not a TER line
             _add_if_new(blocks_by_residue, reskey, pdb_block, interrupted_residues)
+
+        if interrupted_residues:
+            msg = f"interrupted residues in PDB: {interrupted_residues}"
+            raise ValueError(msg)
 
         # verify that each identifier (e.g. "A:17" has a single resname
         violations = {k: v for k, v in reskey_to_resname.items() if len(v) != 1}
@@ -1464,7 +1472,19 @@ class LinkedRDKitChorizo:
         # create rdkit molecules from PDB strings for each residue
         raw_input_mols = {}
         for reskey, pdb_block in blocks_by_residue.items():
-            pdbmol = Chem.MolFromPDBBlock(
+            altlocs = set([atom[1] for atom in pdb_block if atom[1]])
+            if altlocs:
+                for altloc in altlocs:
+                    editmol = Chem.EditableMol(Chem.Mol())
+                    editmol.BeginBatchEdit()
+                    for atom in pdb_block:
+                        if atom[1] == "" or atom[1] == altloc:
+                            atomic_num = periodic_table.GetAtomicNumber()
+                            rdkit_atom = Chem.Atom(
+                            editmol.AddAtom(rdkit_atom) 
+            
+            
+Chem.MolFromPDBBlock(
                 pdb_block, removeHs=False
             )  # TODO RDKit ignores AltLoc ?
 
