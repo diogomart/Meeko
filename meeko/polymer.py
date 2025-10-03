@@ -2093,6 +2093,8 @@ class Polymer(BaseJSONParsable):
         # generate macromolecule hierarchy iterator
         hierarchy = prody_obj.getHierView()
         # iterate chains
+        rdkit_errors = []
+        rdkit_failed_resid = []
         for chain in hierarchy.iterChains():
             # iterate residues
             for res in chain.iterResidues():
@@ -2108,14 +2110,24 @@ class Polymer(BaseJSONParsable):
                 # we are not sanitizing because protonated LYS don't have the
                 # formal charge set on the N and Chem.SanitizeMol raises error
                 # Chem.SanitizeMol(prody_mol)
-                prody_mol, missed_altloc, needed_altloc = prody_to_rdkit(
-                    res,
-                    sanitize=False,
-                    requested_altloc=requested_altloc,
-                    default_altloc=default_altloc,
-                )
-                raw_input_mols[reskey] = (prody_mol, res_name,
-                                          missed_altloc, needed_altloc)
+                try:
+                    prody_mol, missed_altloc, needed_altloc = prody_to_rdkit(
+                        res,
+                        sanitize=False,
+                        requested_altloc=requested_altloc,
+                        default_altloc=default_altloc,
+                    )
+                    raw_input_mols[reskey] = (prody_mol, res_name, missed_altloc, needed_altloc)
+                except Exception as err:
+                    rdkit_errors.append(err)
+                    rdkit_failed_resid.append(f"{chain_id}:{res_num}{icode}")
+        if len(rdkit_errors):
+            print("The following residues could not be converted to RDKit:") 
+            for resid, err in zip(rdkit_failed_resid, rdkit_errors):
+                print(f"  - {resid}")
+                print(err)
+                print()
+            raise RuntimeError("The above residues could not be converted to RDKit")
         return raw_input_mols
 
 
