@@ -1283,11 +1283,26 @@ class Polymer(BaseJSONParsable):
 
         """
 
-        tmp_raw_input_mols = cls._prody_to_residue_mols(
+        tmp_raw_input_mols, rdkit_failed_resid, rdkit_errors = cls._prody_to_residue_mols(
             prody_obj,
             wanted_altloc,
             default_altloc,
         )
+
+        failed_and_not_deleted_resid = []
+        failed_and_not_deleted_errors = []
+        for resid, err in zip(rdkit_failed_resid, rdkit_errors):
+            if resid not in residues_to_delete:
+                failed_and_not_deleted_resid.append(resid)
+                failed_and_not_deleted_errors.append(err) 
+        if len(failed_and_not_deleted_resid):
+            print("The following residues could not be converted to RDKit:") 
+            for resid, err in zip(failed_and_not_deleted_resid, failed_and_not_deleted_errors):
+                print(f"  - {resid}")
+                print(err)
+                print()
+            raise RuntimeError("The above residues could not be converted to RDKit")
+        residues_to_delete = list(set(residues_to_delete) - set(rdkit_failed_resid)) 
 
         # from here on it duplicates self.from_pdb_string(), but extracting
         # this out into a function felt like it sacrificed readibility
@@ -2121,14 +2136,7 @@ class Polymer(BaseJSONParsable):
                 except Exception as err:
                     rdkit_errors.append(err)
                     rdkit_failed_resid.append(f"{chain_id}:{res_num}{icode}")
-        if len(rdkit_errors):
-            print("The following residues could not be converted to RDKit:") 
-            for resid, err in zip(rdkit_failed_resid, rdkit_errors):
-                print(f"  - {resid}")
-                print(err)
-                print()
-            raise RuntimeError("The above residues could not be converted to RDKit")
-        return raw_input_mols
+        return raw_input_mols, rdkit_failed_resid, rdkit_errors
 
 
 
