@@ -1482,7 +1482,7 @@ class RDKitMoleculeSetup(MoleculeSetup, MoleculeSetupExternalToolkit, BaseJSONPa
         self.atom_to_ring_id = {}
         self.rmsd_symmetry_indices = ()
 
-        self.compute_charges = False
+        self.compute_charges_even_with_charge_template = False
 
     # region JSON-interchange functions
     @classmethod
@@ -1558,7 +1558,7 @@ class RDKitMoleculeSetup(MoleculeSetup, MoleculeSetupExternalToolkit, BaseJSONPa
         charge_model: str = "gasteiger",
         read_charges_from_prop: str = None,
         conformer_id: int = -1,
-        compute_charges: bool = False, 
+        compute_charges_even_with_charge_template: bool = False, 
         template_key: str = None,
         template_charge: dict = None
     ):
@@ -1573,7 +1573,7 @@ class RDKitMoleculeSetup(MoleculeSetup, MoleculeSetupExternalToolkit, BaseJSONPa
         charge_model: str
         read_charges_from_prop: str
         conformer_id: int
-        compute_charges: bool
+        compute_charges_even_with_charge_template: bool
 
         Returns
         -------
@@ -1614,7 +1614,7 @@ class RDKitMoleculeSetup(MoleculeSetup, MoleculeSetupExternalToolkit, BaseJSONPa
         molsetup = cls()
         molsetup.mol = mol
         molsetup.atom_true_count = molsetup.get_num_mol_atoms()
-        molsetup.compute_charges = compute_charges
+        molsetup.compute_charges_even_with_charge_template = compute_charges_even_with_charge_template
         molsetup.name = molsetup.get_mol_name()
         coords = rdkit_conformer.GetPositions()
         molsetup.init_atom(charge_model, 
@@ -1657,26 +1657,16 @@ class RDKitMoleculeSetup(MoleculeSetup, MoleculeSetupExternalToolkit, BaseJSONPa
         None
         """
 
-        # Quick sanity check
-        if template_key == None and self.compute_charges == False:
-            raise ValueError("Template key is none and compute_charges is false. Something has gone terribly wrong. ")
+        compute_charges = (
+            template_charge is None
+            or self.compute_charges_even_with_charge_template
+            or charge_model == "read"  # used for PQR code path
+        )
 
-        temp_compute_charges = None
-        if charge_model == "read":
-            # pqr option, leave this here for now. 
-            # since read pqr is computed by the first function. 
-            temp_compute_charges = self.compute_charges
-            self.compute_charges = True
-
-        if self.compute_charges: # not from template --recompute_charges option
+        if compute_charges:
             charges = self.calculate_charges(charge_model, read_charges_from_prop)
         else: # read from template json
             charges = self.get_charges_from_template(charge_model, template_charge)
-
-        if temp_compute_charges is not None:
-            # restore variable
-            self.compute_charges = temp_compute_charges
-
 
         # register atom
         for a in self.mol.GetAtoms():
@@ -1795,7 +1785,7 @@ class RDKitMoleculeSetup(MoleculeSetup, MoleculeSetupExternalToolkit, BaseJSONPa
             case "zero":
                 charges = [0.0] * self.mol.GetNumAtoms()
             case _:
-                raise ValueError("Incompatible charge model requested from charge template. Use --recompute_charges")
+                raise ValueError(f"Incompatible {charge_model=} requested from charge template. Use --compute_charges if running from mk_prepare_receptor.py")
         
         # make sure order of charge is same for both version of the residue
         charges = np.array(charges)

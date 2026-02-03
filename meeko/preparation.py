@@ -106,7 +106,7 @@ class MoleculePreparation:
         reactive_smarts_idx=None,
         add_index_map=False,
         remove_smiles=False,
-        compute_charges=False
+        compute_charges_even_with_charge_template=False,
     ):
         """
 
@@ -136,7 +136,7 @@ class MoleculePreparation:
         reactive_smarts_idx
         add_index_map
         remove_smiles
-        compute_charges
+        compute_charges_even_with_charge_template
         """
 
         if type(merge_these_atom_types) not in (list, set, tuple):
@@ -178,7 +178,7 @@ class MoleculePreparation:
             )
 
         self.charge_model = charge_model
-        self.compute_charges = compute_charges
+        self.compute_charges_even_with_charge_template = compute_charges_even_with_charge_template
         self.charge_atom_prop = charge_atom_prop
 
         if self.charge_model!="read" and self.charge_atom_prop: 
@@ -549,17 +549,6 @@ class MoleculePreparation:
 
 
 
-        # make sure template charge is populated
-        # otherwise, charges must be computed or read elsewhere.
-        temp_compute_charges = None
-        if template_charge == None and self.compute_charges == False:
-            temp_compute_charges = self.compute_charges
-            self.compute_charges=True
-            if self.charge_model == "read":
-                print("No template available, or molecule is ligand.\nCharge model will be read from input mol property\n")
-            else:
-                print("Residue missing from template, or molecule is ligand.\nCharge will be computed from scratch.\n")
-
         setup = setup_class.from_mol(
             mol,
             keep_chorded_rings=self.keep_chorded_rings,
@@ -567,7 +556,7 @@ class MoleculePreparation:
             charge_model= self.charge_model,
             read_charges_from_prop=self.charge_atom_prop,
             conformer_id=conformer_id,
-            compute_charges=self.compute_charges, 
+            compute_charges_even_with_charge_template=self.compute_charges_even_with_charge_template, 
             template_key=template_key,
             template_charge=template_charge
         )
@@ -586,7 +575,7 @@ class MoleculePreparation:
 
         # Convert molecule to graph and apply trained Espaloma model
         # skip if charges are read from template
-        if self.dihedral_model == "espaloma" or (self.charge_model == "espaloma" and self.compute_charges):
+        if self.dihedral_model == "espaloma" or (self.charge_model == "espaloma" and self.compute_charges_even_with_charge_template):
             self.espaloma_model = EspalomaTyper()
             if mol.GetNumAtoms() > 1:
                 molgraph = self.espaloma_model.get_espaloma_graph(setup)
@@ -596,16 +585,11 @@ class MoleculePreparation:
             self.espaloma_model.set_espaloma_dihedrals(setup, molgraph)
 
         # Grab charges from graph node and set them to the molsetup
-        if self.charge_model == "espaloma" and self.compute_charges:
+        if self.charge_model == "espaloma" and self.compute_charges_even_with_charge_template:
             if mol.GetNumAtoms() > 1:
                 self.espaloma_model.set_espaloma_charges(setup, molgraph)
             else:
                 setup.atoms[0].charge = float(mol.GetAtomWithIdx(0).GetFormalCharge())
-        
-
-        # restore value of self.compute_charges
-        if temp_compute_charges is not None:
-            self.compute_charges=temp_compute_charges
 
         # merge hydrogens (or any terminal atoms)
         indices = set()

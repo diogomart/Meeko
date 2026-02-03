@@ -533,7 +533,7 @@ def main():
     else:
         mk_config = {}
     
-    mk_config["compute_charges"] = args.compute_charges
+    mk_config["compute_charges_even_with_charge_template"] = args.compute_charges
 
     # update config by inputs from arguments
 
@@ -549,7 +549,7 @@ def main():
     # initialize MoleculePreparation with config
     mk_prep = MoleculePreparation.from_config(mk_config)
 
-    if mk_config["compute_charges"]:
+    if mk_config["compute_charges_even_with_charge_template"]:
         # use green text
         print(f"\033[32m {mk_prep.charge_model} harges will be computed from scratch\n \033[0m")
     else:
